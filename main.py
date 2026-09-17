@@ -1,7 +1,12 @@
 from fastapi import Body, FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 
-app = FastAPI()
+app = FastAPI(
+    title="Task API",
+    version="1.0",
+    description="A to-do list you can create, read, update and delete over HTTP. "
+    "Storage is a plain Python list, so restarting the server resets it.",
+)
 
 # The whole "database". It lives in RAM, so restarting the server wipes it.
 tasks = [
@@ -32,27 +37,27 @@ def find(task_id: int):
     raise HTTPException(404, f"Task {task_id} not found")
 
 
-@app.get("/")
+@app.get("/", summary="What this API is and where to go next")
 def root():
     return {"name": "Task API", "version": "1.0", "endpoints": ["/tasks"]}
 
 
-@app.get("/health")
+@app.get("/health", summary="Say whether the server is alive")
 def health():
     return {"status": "ok"}
 
 
-@app.get("/tasks")
+@app.get("/tasks", summary="List every task")
 def list_tasks():
     return tasks
 
 
-@app.get("/tasks/{task_id}")
+@app.get("/tasks/{task_id}", summary="Get one task by id, or 404")
 def get_task(task_id: int):
     return find(task_id)
 
 
-@app.post("/tasks", status_code=201)
+@app.post("/tasks", status_code=201, summary="Create a task from a title")
 def create_task(body: dict = Body(...)):
     task = {
         "id": max((t["id"] for t in tasks), default=0) + 1,
@@ -62,7 +67,7 @@ def create_task(body: dict = Body(...)):
     tasks.append(task)
     return task
 
-@app.put("/tasks/{task_id}")
+@app.put("/tasks/{task_id}", summary="Change a task's title, its done flag, or both")
 def update_task(task_id: int, body: dict = Body(...)):
     task = find(task_id)
     if "title" not in body and "done" not in body:
@@ -76,6 +81,6 @@ def update_task(task_id: int, body: dict = Body(...)):
     return task
 
 
-@app.delete("/tasks/{task_id}", status_code=204)
+@app.delete("/tasks/{task_id}", status_code=204, summary="Delete a task, returning no body")
 def delete_task(task_id: int):
     tasks.remove(find(task_id))
