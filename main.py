@@ -38,6 +38,40 @@ def health():
     return {"status": "ok"}
 
 
+@app.post("/reports", status_code=202)
+def request_report(body: dict = Body(...)):
+    """Accept fast. Do nothing slow here -- that's the whole idea.
+
+    202 means "I have taken this, it is not finished". 200 would be a lie.
+    """
+    topic = body.get("topic")
+    if not isinstance(topic, str) or not topic.strip():
+        # A wrong *input* is rejected at the door and no job is created. Only a
+        # wrong *moment* -- a service being down -- deserves a retry.
+        raise HTTPException(400, "Field 'topic' is required and must not be empty")
+
+    report_id = f"rep_{len(reports) + 1}"
+    reports[report_id] = {"id": report_id, "topic": topic.strip(), "status": "pending"}
+    inngest_client.send_sync(
+        inngest.Event(name="report/requested", data={"id": report_id, "topic": topic.strip()})
+    )
+    return {"id": report_id, "status": "pending"}
+
+
+@app.get("/reports/{report_id}")
+def get_report(report_id: str):
+    """Asking this over and over is called polling. Until it flips to done, the
+    client and the server disagree about the world -- eventual consistency."""
+    if report_id not in reports:
+        raise HTTPException(404, f"Report {report_id} not found")
+    return reports[report_id]
+
+
+@app.get("/reports")
+def list_reports():
+    return list(reports.values())
+
+
 @inngest_client.create_function(
     fn_id="say-hello",
     trigger=inngest.TriggerEvent(event="test/hello"),
@@ -47,4 +81,24 @@ async def say_hello(ctx: inngest.Context) -> str:
     return "Hello from the background!"
 
 
-inngest.fast_api.serve(app, inngest_client, [say_hello])
+@inngest_client.create_function(
+    fn_id="make-report",
+    trigger=inngest.TriggerEvent(event="report/requested"),
+)
+async def make_report(ctx: inngest.Context) -> dict:
+    report_id = ctx.event.data["id"]
+    topic = ctx.event.data["topic"]
+
+    # Two steps, so the dashboard shows them separately and a crash between them
+    # does not redo the first one.
+    await ctx.step.sleep("do-the-slow-work", 8000)
+
+    async def build() -> str:
+        return f"Report about {topic}: 3 findings, 1 recommendation."
+
+    result = await ctx.step.run("build-report", build)
+    reports[report_id] = {"id": report_id, "topic": topic, "status": "done", "result": result}
+    return reports[report_id]
+
+
+inngest.fast_api.serve(app, inngest_client, [say_hello, make_report])
