@@ -84,6 +84,7 @@ async def say_hello(ctx: inngest.Context) -> str:
 @inngest_client.create_function(
     fn_id="make-report",
     trigger=inngest.TriggerEvent(event="report/requested"),
+    retries=2,  # so a failure shows 3 attempts in total: the first, then two more
 )
 async def make_report(ctx: inngest.Context) -> dict:
     report_id = ctx.event.data["id"]
@@ -94,6 +95,8 @@ async def make_report(ctx: inngest.Context) -> dict:
     await ctx.step.sleep("do-the-slow-work", 8000)
 
     async def build() -> str:
+        if topic == "fail":
+            raise Exception("The report oven is broken!")
         return f"Report about {topic}: 3 findings, 1 recommendation."
 
     result = await ctx.step.run("build-report", build)
