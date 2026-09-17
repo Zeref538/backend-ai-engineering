@@ -70,18 +70,19 @@ def create_task(body: dict = Body(...)):
 
 @app.put("/tasks/{task_id}", summary="Change a task's title, its done flag, or both")
 def update_task(task_id: int, body: dict = Body(...)):
-    task = find(task_id)
+    find(task_id)  # 404s before we touch the database
     if "title" not in body and "done" not in body:
         raise HTTPException(400, "Send at least one of 'title' or 'done'")
-    if "title" in body:
-        task["title"] = clean_title(body)
+    title = clean_title(body) if "title" in body else None
+    done = None
     if "done" in body:
         if not isinstance(body["done"], bool):
             raise HTTPException(400, "Field 'done' must be true or false")
-        task["done"] = body["done"]
-    return task
+        done = body["done"]
+    return db.update(task_id, title=title, done=done)
 
 
 @app.delete("/tasks/{task_id}", status_code=204, summary="Delete a task, returning no body")
 def delete_task(task_id: int):
-    tasks.remove(find(task_id))
+    find(task_id)
+    db.delete(task_id)
