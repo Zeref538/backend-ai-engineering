@@ -63,13 +63,10 @@ def get_task(task_id: int):
 
 @app.post("/tasks", status_code=201, summary="Create a task from a title")
 def create_task(body: dict = Body(...)):
-    task = {
-        "id": max((t["id"] for t in tasks), default=0) + 1,
-        "title": clean_title(body),
-        "done": False,
-    }
-    tasks.append(task)
-    return task
+    # SQLite hands out the id now (INTEGER PRIMARY KEY AUTOINCREMENT), so the
+    # old max(id)+1 trick is gone -- and so is the chance of two requests racing
+    # for the same number.
+    return db.insert(clean_title(body))
 
 @app.put("/tasks/{task_id}", summary="Change a task's title, its done flag, or both")
 def update_task(task_id: int, body: dict = Body(...)):
