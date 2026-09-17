@@ -2,6 +2,8 @@ from fastapi import Body, FastAPI, HTTPException
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
+import db
+
 app = FastAPI(
     title="Task API",
     version="1.0",
@@ -9,12 +11,7 @@ app = FastAPI(
     "Storage is a plain Python list, so restarting the server resets it.",
 )
 
-# The whole "database". It lives in RAM, so restarting the server wipes it.
-tasks = [
-    {"id": 1, "title": "Read the assignment brief", "done": True},
-    {"id": 2, "title": "Build the task API", "done": False},
-    {"id": 3, "title": "Publish it to GitHub", "done": False},
-]
+db.init()  # create tasks.db and its table on startup if they aren't there yet
 
 
 @app.exception_handler(HTTPException)
