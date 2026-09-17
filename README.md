@@ -81,7 +81,15 @@ HTTP/1.1 400 Bad Request
 
 ## Swagger UI
 
+FastAPI reads my function names, type hints and `summary=` text and builds this
+page itself. There is no hand-written spec file in this repo.
+
 ![Swagger UI showing all seven endpoints](docs/swagger.png)
+
+Full CRUD works from this page with no curl. Here is **Try it out** on
+`POST /tasks`, executed live against the running server:
+
+![Try it out on POST /tasks returning 201 and the new task](docs/swagger-try-it-out.png)
 
 ## Notes
 
