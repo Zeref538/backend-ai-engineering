@@ -35,10 +35,10 @@ def clean_title(body: dict) -> str:
 
 
 def find(task_id: int):
-    for task in tasks:
-        if task["id"] == task_id:
-            return task
-    raise HTTPException(404, f"Task {task_id} not found")
+    task = db.one_task(task_id)
+    if task is None:
+        raise HTTPException(404, f"Task {task_id} not found")
+    return task
 
 
 @app.get("/", summary="What this API is and where to go next")
@@ -53,7 +53,7 @@ def health():
 
 @app.get("/tasks", summary="List every task")
 def list_tasks():
-    return tasks
+    return db.all_tasks()
 
 
 @app.get("/tasks/{task_id}", summary="Get one task by id, or 404")
