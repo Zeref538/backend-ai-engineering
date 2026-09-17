@@ -104,4 +104,17 @@ async def make_report(ctx: inngest.Context) -> dict:
     return reports[report_id]
 
 
-inngest.fast_api.serve(app, inngest_client, [say_hello, make_report])
+@inngest_client.create_function(
+    fn_id="heartbeat",
+    trigger=inngest.TriggerCron(cron="* * * * *"),  # every minute, for testing only
+)
+async def heartbeat(ctx: inngest.Context) -> str:
+    counts = {"pending": 0, "done": 0, "failed": 0}
+    for r in reports.values():
+        counts[r["status"]] = counts.get(r["status"], 0) + 1
+    line = f"heartbeat: pending={counts['pending']} done={counts['done']} failed={counts['failed']}"
+    print(line)
+    return line
+
+
+inngest.fast_api.serve(app, inngest_client, [say_hello, make_report, heartbeat])
