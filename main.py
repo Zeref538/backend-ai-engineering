@@ -69,6 +69,16 @@ def login(body: dict = Body(...)):
     return identity.log_in(email, password)
 
 
+@app.get("/public/info", summary="Anyone may read this")
+def public_info():
+    return {"message": "Welcome stranger! This info is public."}
+
+
+@app.get("/protected/profile", summary="Who the token belongs to")
+def profile(user: dict = Depends(current_user)):
+    return user
+
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
