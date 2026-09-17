@@ -1,0 +1,18 @@
+status: FAILED
+attempt 0  FunctionScheduled      None               22:04:44
+attempt 0  FunctionStarted        None               22:04:44
+attempt 0  StepStarted            step               22:04:44
+attempt 0  StepCompleted          step               22:04:44
+attempt 0  StepSleeping           do-the-slow-work   22:04:44
+attempt 0  StepStarted            step               22:04:52
+attempt 0  StepErrored            build-report       22:04:52
+attempt 1  StepScheduled          build-report       22:04:52
+attempt 1  StepStarted            step               22:05:25
+attempt 1  StepErrored            build-report       22:05:25
+attempt 2  StepScheduled          build-report       22:05:25
+attempt 2  StepStarted            step               22:06:00
+attempt 2  StepCompleted          step               22:06:00
+attempt 0  StepScheduled          None               22:06:00
+attempt 0  StepStarted            step               22:06:00
+attempt 0  StepFailed             step               22:06:00
+attempt 0  FunctionFailed         None               22:06:00
