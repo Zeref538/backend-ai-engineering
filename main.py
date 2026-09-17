@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import Body, FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 
 app = FastAPI()
@@ -15,6 +15,14 @@ tasks = [
 def json_error(request, exc):
     """Every error leaves as {"error": "..."} instead of FastAPI's {"detail": ...}."""
     return JSONResponse({"error": exc.detail}, status_code=exc.status_code)
+
+
+def clean_title(body: dict) -> str:
+    """A title must be present, be text, and not be blank. Anything else is a 400."""
+    title = body.get("title")
+    if not isinstance(title, str) or not title.strip():
+        raise HTTPException(400, "Field 'title' is required and must not be empty")
+    return title.strip()
 
 
 def find(task_id: int):
@@ -42,3 +50,14 @@ def list_tasks():
 @app.get("/tasks/{task_id}")
 def get_task(task_id: int):
     return find(task_id)
+
+
+@app.post("/tasks", status_code=201)
+def create_task(body: dict = Body(...)):
+    task = {
+        "id": max((t["id"] for t in tasks), default=0) + 1,
+        "title": clean_title(body),
+        "done": False,
+    }
+    tasks.append(task)
+    return task
