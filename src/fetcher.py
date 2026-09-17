@@ -14,7 +14,9 @@ import requests
 USER_AGENT = "FlyRankInternship-A9/1.0 (+https://github.com/Zeref538/polite-scraper)"
 TIMEOUT = 10          # seconds before we give up on a slow server
 DELAY = 0.5           # minimum gap between two real requests
-CACHE = Path("cache")
+# Anchored to the project folder, not the current directory: running from the
+# repo root and from src/ must share one cache, not quietly make two.
+CACHE = Path(__file__).resolve().parent.parent / "cache"
 
 _last_request_at = 0.0
 stats = {"fetched": 0, "cache_hits": 0, "failed": []}
@@ -60,6 +62,11 @@ def fetch(url: str, retry: bool = True) -> str | None:
         return None
 
     if r.status_code == 200:
+        # If the server never says which character set it used, requests falls
+        # back to ISO-8859-1 (the old HTTP default) and a UTF-8 pound sign comes
+        # out as "A-circumflex pound". Let chardet look at the actual bytes.
+        if "charset" not in r.headers.get("Content-Type", "").lower():
+            r.encoding = r.apparent_encoding
         stats["fetched"] += 1
         CACHE.mkdir(exist_ok=True)
         path.write_text(r.text, encoding="utf-8")
