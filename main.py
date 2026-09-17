@@ -69,6 +69,11 @@ def login(body: dict = Body(...)):
     return identity.log_in(email, password)
 
 
+@app.post("/auth/logout", status_code=204, summary="End the session")
+def logout(token: str = Depends(bearer_token)):
+    identity.log_out(token)
+
+
 @app.get("/public/info", summary="Anyone may read this")
 def public_info():
     return {"message": "Welcome stranger! This info is public."}
@@ -77,6 +82,11 @@ def public_info():
 @app.get("/protected/profile", summary="Who the token belongs to")
 def profile(user: dict = Depends(current_user)):
     return user
+
+
+@app.get("/protected/dashboard", summary="A second route behind the same guard")
+def dashboard(user: dict = Depends(current_user)):
+    return {"message": f"Welcome back, {user['email']}.", "user_id": user["id"]}
 
 
 @app.get("/health")
