@@ -1,4 +1,5 @@
 from fastapi import Body, FastAPI, HTTPException
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 app = FastAPI(
@@ -20,6 +21,12 @@ tasks = [
 def json_error(request, exc):
     """Every error leaves as {"error": "..."} instead of FastAPI's {"detail": ...}."""
     return JSONResponse({"error": exc.detail}, status_code=exc.status_code)
+
+
+@app.exception_handler(RequestValidationError)
+def bad_body(request, exc):
+    """Body that isn't even valid JSON is a client mistake: 400, same shape."""
+    return JSONResponse({"error": "Body must be a JSON object"}, status_code=400)
 
 
 def clean_title(body: dict) -> str:
