@@ -4,9 +4,13 @@ A to-do list you can talk to over HTTP. Create a task, read one or all of them,
 change one, delete one — the four CRUD operations, which is the shape almost
 every backend in the world has underneath.
 
-Storage is a plain Python list in memory. **Restart the server and your tasks are
-gone**, back to the three examples. That is on purpose: it's the hole a database
-fills, and next assignment fills it.
+Storage is **SQLite**, a database that is just a file on disk -- no server to
+install, no password, nothing to start. Your tasks survive a restart.
+
+It did not start that way. The first version kept tasks in a Python list in
+memory and lost everything on restart. Swapping in a database touched exactly one
+new file, `db.py`, and left every URL, request body and response byte-for-byte
+identical. That is the point of the exercise.
 
 ## Run it
 
@@ -14,6 +18,12 @@ fills, and next assignment fills it.
 pip install "fastapi[standard]" uvicorn
 python -m uvicorn main:app --reload --port 8000
 ```
+
+`tasks.db` is created next to `main.py` on first run, the `tasks` table with it,
+and three example tasks are inserted **only if the table is empty** -- so
+restarting never duplicates them. The file is gitignored; the code is its recipe.
+Point it somewhere else with the `TASKS_DB` environment variable, which is how
+the tests keep their hands off your real data.
 
 Then open **http://localhost:8000/docs** — that's Swagger UI, a page FastAPI
 generates from your code that lets you fire every endpoint from a browser with
@@ -101,6 +111,60 @@ which deletes by handing `find()`'s result straight to `list.remove`.
 **Blank is not a title.** `{"title": "   "}` is rejected the same as `{}`. The
 check is `.strip()`, and the stripped version is what gets stored.
 
-**Ids come from `max(existing) + 1`, not `len(list) + 1`.** With `len`, deleting
-task 3 of 3 and creating a new one would hand out id 3 again, and anything
-holding the old id would silently point at the wrong task.
+**Ids come from SQLite, not from me.** The column is
+`INTEGER PRIMARY KEY AUTOINCREMENT`, so the database hands out the next number
+and never reuses one. The in-memory version computed `max(id) + 1` in Python,
+which two requests arriving together could both read before either wrote.
+
+**SQLite has no boolean.** `done` is stored as `0` or `1`, so `db.as_task()`
+converts it back to `true`/`false` on the way out. Without that one line the API
+would quietly start answering `"done": 1`, and every client comparing to `true`
+would break.
+
+**`with sqlite3.connect(...)` does not close the connection.** It only commits or
+rolls back the transaction. I found out because a test could not delete its own
+database file -- Windows refuses to delete a file something still has open. The
+fix is `contextlib.closing` around it, in `db.py`.
+
+## The database
+
+`db.py` is the only file that writes SQL. `main.py` calls `db.all_tasks()`,
+`db.insert()` and so on, and would not notice if the storage underneath changed.
+
+### Seeing inside it
+
+```bash
+pip install sqlite-web
+python -m sqlite_web.sqlite_web --port 8090 tasks.db
+```
+
+![sqlite-web showing the tasks table with four rows](docs/sqlite-viewer.png)
+
+(Note: `python -m sqlite_web` crashes with an `ImportError` in version 0.8.1 --
+its `__main__.py` imports a `main` that no longer exists. `sqlite_web.sqlite_web`
+is the module that actually runs.)
+
+### The API is only a window onto the file
+
+Here is the lesson of this stage. With the server running and untouched, I
+changed the data by hand:
+
+```
+$ curl -s localhost:8000/tasks
+[{"id":1,...},{"id":2,...},{"id":3,...}]          # three tasks
+
+sqlite> UPDATE tasks SET done = 1;
+sqlite> DELETE FROM tasks WHERE done = 1;
+
+$ curl -s localhost:8000/tasks
+[]                                                 # no restart, no code change
+```
+
+The API had no cached copy to go stale, because it never held one. Every request
+asks the file. A few queries worth knowing:
+
+```sql
+SELECT * FROM tasks;                  -- everything
+SELECT * FROM tasks WHERE done = 1;   -- just the finished ones
+SELECT COUNT(*) FROM tasks;           -- how many rows
+```
