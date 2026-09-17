@@ -61,3 +61,21 @@ def create_task(body: dict = Body(...)):
     }
     tasks.append(task)
     return task
+
+@app.put("/tasks/{task_id}")
+def update_task(task_id: int, body: dict = Body(...)):
+    task = find(task_id)
+    if "title" not in body and "done" not in body:
+        raise HTTPException(400, "Send at least one of 'title' or 'done'")
+    if "title" in body:
+        task["title"] = clean_title(body)
+    if "done" in body:
+        if not isinstance(body["done"], bool):
+            raise HTTPException(400, "Field 'done' must be true or false")
+        task["done"] = body["done"]
+    return task
+
+
+@app.delete("/tasks/{task_id}", status_code=204)
+def delete_task(task_id: int):
+    tasks.remove(find(task_id))
