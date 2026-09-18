@@ -31,8 +31,14 @@ cp .env.example .env        # then paste your own values in
 python -m uvicorn main:app --port 3000
 ```
 
-Get the two values from the Supabase dashboard: **Project Settings → API** gives
-you the **Project URL** and the **anon public** key.
+Get the two values from the Supabase dashboard: **Settings → API Keys** gives
+you the **Project URL** and the public key.
+
+Supabase renamed that key. It is now the **publishable** key (`sb_publishable_…`);
+the older **anon** key (a long `eyJ…` string) still works and is what the
+assignment brief calls it, but anon and service_role are being retired by the end
+of 2026. Either one goes in `SUPABASE_KEY`. The **secret** key is a different
+thing entirely and must never leave your server.
 
 ```
 SUPABASE_URL=https://your-project-ref.supabase.co
