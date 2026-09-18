@@ -4,6 +4,10 @@ from fastapi import Body, FastAPI, HTTPException
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
+from llm.client import LLMError
+from llm.schema import TriageIn
+from llm.triage import classify
+
 # The only line in the API layer that knows storage exists. Set DATABASE_URL and
 # the same routes run on Postgres; leave it unset and they run on SQLite.
 if os.environ.get("DATABASE_URL"):
@@ -29,8 +33,18 @@ def json_error(request, exc):
 
 @app.exception_handler(RequestValidationError)
 def bad_body(request, exc):
-    """Body that isn't even valid JSON is a client mistake: 400, same shape."""
-    return JSONResponse({"error": "Body must be a JSON object"}, status_code=400)
+    """A client mistake is a 400, in the same shape as every other error.
+
+    Name the field. "Body must be a JSON object" tells the caller nothing when
+    the real problem is that `text` was 2,001 characters long.
+    """
+    problems = []
+    for err in exc.errors():
+        # loc looks like ("body", "text"); drop the "body" part.
+        field = ".".join(str(p) for p in err["loc"][1:])
+        problems.append(f"{field}: {err['msg']}" if field else err["msg"])
+    return JSONResponse(
+        {"error": "; ".join(problems) or "Body must be a JSON object"}, status_code=400)
 
 
 def clean_title(body: dict) -> str:
@@ -51,6 +65,16 @@ def find(task_id: int):
 @app.get("/", summary="What this API is and where to go next")
 def root():
     return {"name": "Task API", "version": "1.0", "endpoints": ["/tasks"]}
+
+
+@app.post("/triage", summary="Classify a support message into a team and urgency")
+def triage(body: TriageIn):
+    """Input is validated before a single token is spent."""
+    try:
+        result, _ = classify(body.text)
+    except LLMError as exc:
+        raise HTTPException(exc.status, str(exc)) from exc
+    return result
 
 
 @app.get("/health", summary="Say whether the server is alive")
