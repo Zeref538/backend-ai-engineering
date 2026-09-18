@@ -168,3 +168,60 @@ SELECT * FROM tasks;                  -- everything
 SELECT * FROM tasks WHERE done = 1;   -- just the finished ones
 SELECT COUNT(*) FROM tasks;           -- how many rows
 ```
+
+## Third storage engine, same routes
+
+| Version | Where tasks live | What runs it |
+|---|---|---|
+| A1 | a Python list | the program itself |
+| A2 | `tasks.db` | SQLite, a file on your disk |
+| A3 | rows in `tasks` | Postgres, a database server in a container |
+
+> **Unverified: the Postgres path has not been run.** Docker is not installed on
+> this machine, so `docker compose up` has never executed here. What *is* checked:
+> `db_postgres.py` exposes the same eight functions with the same signatures as
+> `db.py` (a script asserts it), `compose.yaml` parses, and the SQLite path still
+> passes all four test groups. Treat the Postgres side as written-but-untested
+> until you have run the command below.
+
+```bash
+cp .env.example .env
+docker compose up
+curl -i http://localhost:3000/tasks
+```
+
+**Only `db_postgres.py` and the infrastructure files are new.** `main.py` gained
+four lines, and they are a choice of import:
+
+```python
+if os.environ.get("DATABASE_URL"):
+    import db_postgres as db
+else:
+    import db
+```
+
+Every route, every status code and every response body is untouched. That is what
+"storage is an implementation detail" means in practice: three completely
+different engines, one unchanged API.
+
+### Things the compose file is doing on purpose
+
+**`db`, not `localhost`.** Inside compose, each container has its own localhost,
+so `localhost` from the API container means the API container itself. Containers
+reach each other by service name.
+
+**`condition: service_healthy`.** Plain `depends_on` only waits for the database
+*container* to exist, not for Postgres inside it to be ready for connections. The
+API would start, fire its first query into a socket nobody is listening on, and
+crash. The healthcheck runs `pg_isready` until the database actually answers.
+
+**The named volume.** Without `taskdata`, rows live inside the container and die
+with it -- `docker compose down` then `up` would give you three seeded tasks
+again and a shrug. The volume is what makes the data survive.
+
+### Placeholders change shape, not meaning
+
+SQLite writes `?`, Postgres writes `%s`. Both mean the same thing: **this is a
+value, never code.** Gluing an id straight into the SQL string is how injection
+happens -- an id of `1; DROP TABLE tasks` would simply be executed. Passed as a
+parameter, the exact same text is only ever compared against a column.
