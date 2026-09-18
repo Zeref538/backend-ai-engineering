@@ -1,8 +1,15 @@
+import os
+
 from fastapi import Body, FastAPI, HTTPException
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-import db
+# The only line in the API layer that knows storage exists. Set DATABASE_URL and
+# the same routes run on Postgres; leave it unset and they run on SQLite.
+if os.environ.get("DATABASE_URL"):
+    import db_postgres as db
+else:
+    import db
 
 app = FastAPI(
     title="Task API",
