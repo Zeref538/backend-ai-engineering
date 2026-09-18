@@ -225,3 +225,140 @@ SQLite writes `?`, Postgres writes `%s`. Both mean the same thing: **this is a
 value, never code.** Gluing an id straight into the SQL string is how injection
 happens -- an id of `1; DROP TABLE tasks` would simply be executed. Passed as a
 parameter, the exact same text is only ever compared against a column.
+
+## POST /triage — an LLM behind the API
+
+One messy sentence in, one clean validated object out. Not a chatbot: no
+conversation, no memory, one decision.
+
+> **Unverified against a real model.** Everything below runs and is tested in
+> **stub mode**, which uses keyword rules instead of an LLM. I do not have an
+> OpenRouter key yet, so no live call has been made from this repo. The eval
+> score quoted is the stub's, and a stub's score says nothing about a model's.
+
+```bash
+cp .env.example .env
+LLM_STUB=1 python -m uvicorn main:app --port 3000
+
+curl -i -X POST http://localhost:3000/triage   -H "Content-Type: application/json"   -d '{"text":"You charged me twice for March and I want one of them back."}'
+```
+
+```
+HTTP/1.1 200 OK
+{"category":"billing","urgency":"high","confidence":0.8,
+ "reason":"Stub classifier matched on billing keywords."}
+```
+
+And a deliberately broken one:
+
+```
+$ curl -i -X POST http://localhost:3000/triage -H "Content-Type: application/json" -d '{"text":""}'
+HTTP/1.1 400 Bad Request
+{"error":"text: String should have at least 1 character"}
+```
+
+The 400 **names the field**. `{"error":"Bad request"}` is useless to whoever has
+to fix the caller.
+
+See [JOB-CARD.md](JOB-CARD.md) for the job, the closed lists, and the "must
+never" rules.
+
+### Swapping providers is three environment variables
+
+```
+LLM_BASE_URL=https://openrouter.ai/api/v1     # or http://localhost:11434/v1/ for Ollama
+LLM_API_KEY=your_key                          # or the literal word "ollama"
+LLM_MODEL=openrouter/free                     # or gemma3:1b
+```
+
+That is the whole difference between a model on your laptop and one in a
+datacentre. Most providers copied OpenAI's request shape, so the same `openai`
+package talks to all of them.
+
+**OpenRouter trap:** free models answer `404 — No endpoints available matching
+your guardrail restrictions` until you turn ON both switches at
+Settings → Privacy. Because of that setting your prompts may be trained on and
+published, so **only ever send made-up test data**. The free tier is 50 requests
+a day and **failed requests count**, which a bad retry loop can burn in about
+ninety seconds.
+
+### Eval — 6/8, stub mode, prompt triage-v1, 18 Sep 2026
+
+```
+ok   #1  want billing  got billing   conf 0.8
+ok   #2  want bug      got bug       conf 0.8
+ok   #3  want feature  got feature   conf 0.8
+ok   #4  want billing  got billing   conf 0.8
+MISS #5  want bug      got other     conf 0.3
+ok   #6  want other    got other     conf 0.3
+MISS #7  want feature  got other     conf 0.3
+ok   #8  want other    got other     conf 0.3
+```
+
+6/8 is 6/8. Both misses are the cases I labelled ambiguous on purpose:
+
+- **#5** *"Export to CSV returns an empty file for accounts with over 10000
+  rows"* — a real bug, described calmly. The stub only knows words like "crash"
+  and "broken", so it has nothing to match. A model should get this one.
+- **#7** *"Can you add SSO? Right now our finance team can't log in at all"* —
+  reads as an urgent bug and is actually a request for something that does not
+  exist yet. I labelled it `feature` and I would not blame anyone for arguing.
+
+What is good is that it **missed with low confidence** — 0.3 on both, and it
+said "found nothing it recognised" rather than inventing a category. A wrong
+answer that admits it is unsure is a different thing from a confident wrong one.
+
+Run it yourself: `python evals/run.py`. On OpenRouter that is 8 of your 50 calls.
+
+### One call's cost log
+
+```json
+{"at":"2026-09-18T13:55:16+00:00","mode":"stub","repairs":0,
+ "prompt_version":"triage-v1","duration_ms":0}
+```
+
+Live calls add `model`, `input_tokens` and `output_tokens`. The prompt is roughly
+**450 tokens** and a reply about **40**, so ~490 tokens a call. At 10,000 requests
+a day that is around **4.9 million tokens/day**. On a free tier it is simply
+impossible — 50 a day — and on a paid tier at $0.15 per million input tokens it
+is well under a dollar a day, until repairs double some of them. **Repairs are
+the cost driver to watch**, which is exactly why `repairs` is in every log line.
+
+### The parts that are not the AI call
+
+The model call is about thirty lines. The rest is what makes it safe to leave
+running:
+
+| Property of an LLM | What this repo does about it |
+|---|---|
+| **Slow** | An explicit 30s timeout. The OpenAI SDK's default is **ten minutes** — leaving it is the classic mistake, and a test asserts it is ≤60s. |
+| **Non-deterministic** | `temperature: 0`, plus eight hand-labelled cases so a prompt change has a number attached. |
+| **Costs money** | A cost log per call, `LLM_STUB=1` to build for free, and `LLM_ENABLED=false` as a kill switch that stops every call without a deploy. |
+| **Confidently wrong** | Output is untrusted input: parse, validate against enums, repair once, then 422 and quarantine. |
+
+**Retries go one way only.** Timeouts, 429 and 5xx get retried with exponential
+backoff plus jitter (1s, 2s, plus a random fraction so everyone who failed
+together doesn't return together). 400, 401 and 403 are **never** retried — a
+wrong key is still wrong on the third try, and each attempt burns one of the
+day's 50.
+
+**One repair, never two.** If the model returns `"category":"urgent"`, it gets
+its own validation error handed back once. If it fails again, the endpoint
+answers **422** and writes the raw output to `logs/quarantine.jsonl` with the
+input, the error and the prompt version. The process never crashes and never
+invents a default — a faked default is a wrong answer nobody can find later.
+
+**Raw model text never reaches the caller**, on success or on failure.
+
+**The customer's words go in their own user message, JSON-encoded** — never
+glued into the system prompt. That is the first OWASP LLM mitigation: if
+untrusted text sits inside your rules, the model cannot tell rules from data,
+and "ignore your instructions" starts working. There is a test for it, and case
+#8 in the eval set is a real injection attempt.
+
+### What I would fix with another day
+
+Get a key and run the eval against a real model, because a stub's 6/8 proves the
+plumbing works and nothing about whether the prompt is any good. Then a request
+cache keyed on input **plus prompt version**, so re-running the eval while
+tweaking wording doesn't cost 8 calls each time.
