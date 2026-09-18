@@ -32,6 +32,9 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# ...but the template of NAMES (never values) must be committed, so a stranger
+# knows what to fill in.
+!.env.example
 
 # vercel
 .vercel
