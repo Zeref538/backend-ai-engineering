@@ -1,0 +1,6 @@
+# Each project keeps its own .gitignore; these are the ones worth repeating.
+__pycache__/
+*.pyc
+.venv/
+.env
+.env.local
