@@ -1,0 +1,5 @@
+@import "tailwindcss";
+@import "@xyflow/react/dist/style.css";
+
+:root { --bg: #0f1115; --panel: #171a21; --line: #2a2f3a; --text: #e6e8ec; --muted: #9aa2b1; }
+body { background: var(--bg); color: var(--text); }
