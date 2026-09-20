@@ -4,10 +4,11 @@ Sign up, log in, get a token, and use that token to open doors that are shut to
 everyone else. Supabase handles accounts and passwords; this API decides who gets
 in.
 
-> **Status: the guard is tested, the Supabase round-trip is not.** Every route,
-> status code and header case below is covered by `test_auth.py` against a fake
-> identity provider. I have not yet run it against a real Supabase project,
-> because that needs an account and keys. Nothing here claims otherwise.
+> **Status: verified end to end against a real Supabase project, 20 Sep 2026.**
+> Signup, login, both protected routes, a tampered token, a wrong password and
+> logout all ran live and returned the codes shown below. The nine checks in
+> `test_auth.py` use a fake identity provider, so they need no account, no key
+> and no network.
 
 ## The trust triangle
 
@@ -106,11 +107,57 @@ no header, empty header, a token with no `Bearer ` prefix, `Bearer` with nothing
 after it, the wrong scheme, and a valid token with **one character changed**. All
 six must be 401.
 
-## Two things to watch when you wire up real Supabase
+## One real session
 
-**Email confirmation.** A new project may require confirming the address before
-`sign_in_with_password` works, so Stage 1 can fail with the right password. Check
-the Auth settings before blaming the code.
+```
+public route                       200  {"message":"Welcome stranger! This info is public."}
+protected, no header               401  {"error":"Access token required"}
+signup                             201  {"id":"735f6698-...","email":"be03user96537@flyrank-test.dev",...}
+login                              200  {"access_token":"<hidden>","refresh_token":"<hidden>","token_type":"bearer","expires_in":3600}
+profile with real token            200  {"id":"735f6698-...","email":"be03user96537@flyrank-test.dev",...}
+dashboard with real token          200  {"message":"Welcome back, be03user96537@flyrank-test.dev.",...}
+profile with TAMPERED token        401  {"error":"Invalid or expired token"}
+wrong password                     401  {"error":"Invalid login credentials"}
+logout                             204
+```
+
+The tampered-token line is the one that matters. I took a working token, changed
+**one character in the middle**, and sent it again. If that had still returned
+200, the signature would not be getting checked and the whole assignment would be
+failing silently while looking fine.
+
+## Two traps that each cost me a signup
+
+**`@example.com` is rejected outright.** Supabase answers
+`Email address "test@example.com" is invalid` -- it blocks reserved test domains,
+and `example.com` is the first one anybody reaches for. The assignment brief uses
+it in its own example curl. Use something that looks like a real domain;
+`flyrank-test.dev` works.
+
+**Then every other domain said `email rate limit exceeded`.** That is not a cap
+on signups, it is a cap on *emails*. A new project has email confirmation
+switched on, so each signup tries to send a message, and the free tier's built-in
+mailer allows only a handful an hour. Two errors that look unrelated, one cause.
+
+The fix, written down rather than clicked:
+
+```bash
+npx supabase init
+npx supabase link --project-ref <your-ref>
+npx supabase config push          # sets auth.email.enable_confirmations = false
+```
+
+`supabase/config.toml` is committed, so the setting lives in the repo instead of
+being something somebody once toggled in a dashboard and forgot. Confirmation off
+is right for a throwaway practice project and wrong for anything real.
+
+**One sharp edge in the CLI.** `supabase projects api-keys` returns four keys for
+a new project, and **two of them are both named `default`** -- one
+`sb_publishable_...` and one `sb_secret_...`. Choosing by name is a coin flip
+between the public key and the one that bypasses every access rule, so `.env`
+here is written by matching the value's `sb_publishable_` prefix instead.
+
+## Also worth knowing
 
 **`sign_out`.** The brief writes `signOut(token)`, but the SDK's `sign_out()`
 ends the client's *own* session — it does not take someone else's token and
