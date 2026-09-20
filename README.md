@@ -5,7 +5,7 @@ README, its own run command, its own tests.
 
 | Folder | What it is | Assignments | State |
 |---|---|---|---|
-| [task-api](task-api/) | A to-do API that stores tasks three different ways — a list in memory, then a SQLite file, then PostgreSQL in a container — behind routes that never change. Plus `POST /triage`, an LLM endpoint with validation, repair and a kill switch. | BE-01, BE-02, BE-04, BE-07 | CRUD verified · Postgres and the live model are not |
+| [task-api](task-api/) | A to-do API that stores tasks three different ways — a list in memory, then a SQLite file, then PostgreSQL in a container — behind routes that never change. Plus `POST /triage`, an LLM endpoint with validation, repair and a kill switch. | BE-01, BE-02, BE-04, BE-07 | CRUD and Postgres verified · Docker and the live model are not |
 | [polite-scraper](polite-scraper/) | Scrapes 60 books from a practice sandbox into checked JSON, slowly and with its name on every request. | BE-05 | Verified |
 | [background-job](background-job/) | An API that answers in 0.4 seconds and does 8 seconds of work elsewhere, with retries and a cron job. | BE-06 | Verified |
 | [pdf-report-generator](pdf-report-generator/) | 200 orders → one SQL query → an HTML page → a real 7-page PDF, served by link. | BE-08 | Verified |
@@ -18,6 +18,8 @@ Every project has one command and no test framework to install.
 
 ```bash
 cd task-api             && python test_api.py && python test_triage.py
+#   and, with a Postgres to point at:
+cd task-api             && DATABASE_URL="postgresql://..." python test_postgres.py
 cd polite-scraper       && python src/test_parser.py
 cd background-job       && python test_api.py
 cd pdf-report-generator && python test_report.py
@@ -25,17 +27,19 @@ cd auth-api             && python test_auth.py
 cd ai-decision-flow     && npm install && npm test
 ```
 
-61 checks in total, all passing as of 20 Sep 2026.
+61 checks with no setup, plus 5 more when a Postgres is available. All passing
+as of 20 Sep 2026.
 
 ## What is honestly not finished
 
 Three things need an account or an install I do not have, and every affected
 README says so at the top rather than quietly implying otherwise:
 
-- **Postgres (BE-04)** — written, never run. Docker is not installed. The
-  Postgres module is asserted to expose the same eight functions with the same
-  signatures as the SQLite one, and `compose.yaml` parses, but no container has
-  ever started.
+- **Docker (BE-04)** — the *Postgres code* is verified: every function ran
+  against a real PostgreSQL 17 server, full CRUD went through the API with the
+  right codes, and a separate process read back what the first one wrote. What
+  has never run is `docker compose up` — the container networking, healthcheck
+  and volume are written and unproven, because Docker is not installed.
 - ~~**Supabase (BE-03)**~~ — done. Verified against a live project on
   20 Sep 2026: signup, login, both protected routes, a tampered token, a wrong
   password and logout all returned the right codes.

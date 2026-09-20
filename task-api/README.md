@@ -177,18 +177,40 @@ SELECT COUNT(*) FROM tasks;           -- how many rows
 | A2 | `tasks.db` | SQLite, a file on your disk |
 | A3 | rows in `tasks` | Postgres, a database server in a container |
 
-> **Unverified: the Postgres path has not been run.** Docker is not installed on
-> this machine, so `docker compose up` has never executed here. What *is* checked:
-> `db_postgres.py` exposes the same eight functions with the same signatures as
-> `db.py` (a script asserts it), `compose.yaml` parses, and the SQLite path still
-> passes all four test groups. Treat the Postgres side as written-but-untested
-> until you have run the command below.
+> **The Postgres code is verified. The Docker part is not.** Two different
+> claims, so here they are separately.
+>
+> **Verified, 20 Sep 2026:** every function in `db_postgres.py` ran against a
+> real PostgreSQL 17 server, and the full CRUD went through the API with the
+> right codes — 200, 201, 204, 400 on an empty title, 404 on three unknown-id
+> routes. Seeding stayed once-only across three `init()` calls, and a **separate
+> Python process** read back a row the first one wrote, which is the persistence
+> claim actually being made.
+>
+> **Not verified:** `docker compose up` has never run here, because Docker is not
+> installed. The container networking, the healthcheck and the named volume are
+> written and unproven.
+>
+> The Postgres server used was a Supabase project, which is plain Postgres 17 —
+> the same thing the compose file would start in a container. That tests the code
+> that could be wrong; it does not test the container wiring.
 
 ```bash
 cp .env.example .env
 docker compose up
 curl -i http://localhost:3000/tasks
 ```
+
+**Or skip Docker entirely.** Anything that speaks Postgres works — point
+`DATABASE_URL` at a hosted database and the same code runs:
+
+```bash
+DATABASE_URL="postgresql://user:pass@host:5432/postgres"   python -m uvicorn main:app --port 3000
+```
+
+That is how the Postgres path above was verified without a container. Being able
+to swap the server without touching a line of the app is the same property the
+whole assignment is about, one level up.
 
 **Only `db_postgres.py` and the infrastructure files are new.** `main.py` gained
 four lines, and they are a choice of import:
@@ -362,3 +384,31 @@ Get a key and run the eval against a real model, because a stub's 6/8 proves the
 plumbing works and nothing about whether the prompt is any good. Then a request
 cache keyed on input **plus prompt version**, so re-running the eval while
 tweaking wording doesn't cost 8 calls each time.
+
+## What a real Postgres session looked like
+
+```
+GET /tasks                       200  [3 seeded tasks]
+POST /tasks                      201  {"id":5,"title":"Survive a restart","done":false}
+PUT  /tasks/5  {"done":true}     200  {"id":5,"title":"Survive a restart","done":true}
+POST /tasks    {}                400  {"error":"Field 'title' is required and must not be empty"}
+GET  /tasks/999999               404  {"error":"Task 999999 not found"}
+PUT  /tasks/999999               404  {"error":"Task 999999 not found"}
+DELETE /tasks/999999             404  {"error":"Task 999999 not found"}
+
+  -- a different Python process, same database --
+  {"id": 5, "title": "Survive a restart", "done": true}
+
+DELETE /tasks/5                  204
+GET  /tasks/5                    404  {"error":"Task 5 not found"}
+```
+
+Identical to what SQLite and the in-memory list return. Three storage engines,
+one unchanged API — which is the entire point of keeping SQL in one file.
+
+**The injection check, run for real.** Asking for the task with id
+`1; DROP TABLE tasks` came back as a driver error (`InvalidTextRepresentation`)
+and the table was still there afterwards. The id never reached the database as
+SQL — it was compared against an integer column and rejected for not being an
+integer. That is what a parameter *is*: `%s` is not string formatting, it is a
+promise to the database that this value will never be read as code.
